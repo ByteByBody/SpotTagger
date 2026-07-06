@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Spotify Tagger
+Comment=Tag audio files with Spotify metadata
+Exec=python3 /home/serotonin/spotify-tagger/spotify_tagger_app.py
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Music;Utility;

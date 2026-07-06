@@ -1,0 +1,88 @@
+# spotify-audio-tagger
+
+Tag local audio files with metadata from Spotify or via AcoustID audio fingerprinting.
+
+## Features
+
+- **Spotify mode** — fetch metadata (title, artist, album, cover art) from Spotify using the Web API
+- **AcoustID mode** — auto-detect metadata via audio fingerprinting + MusicBrainz (no Spotify account needed)
+- Supports **MP3**, **M4A**, and **Opus** files
+- Embedded cover art
+- Copy to Spotify Local Files folder for use in the Spotify desktop client
+- GTK3 GUI with drag-and-drop, or CLI
+
+## Quick Start
+
+### 1. Setup
+
+```bash
+./setup.sh
+```
+
+This creates a virtualenv and installs dependencies.
+
+### 2. Get API Keys
+
+- **Spotify mode:** Create an app at https://developer.spotify.com, grab the Client ID and Secret
+- **AcoustID mode:** Get a free API key at https://acoustid.org/
+
+**System dependency:** AcoustID fingerprinting needs `libchromaprint`:
+
+```bash
+# Debian / Ubuntu / Mint
+sudo apt install libchromaprint-dev
+
+# Arch
+sudo pacman -S chromaprint
+```
+
+### 3. Use It
+
+#### CLI
+
+```bash
+# Spotify mode
+./stag song.mp3 https://open.spotify.com/track/... --id CLIENT_ID --secret CLIENT_SECRET
+
+# AcoustID mode (no Spotify credentials)
+export ACOUSTID_API_KEY=your_key
+./stag song.mp3 --acoustid
+```
+
+#### GUI
+
+```bash
+./launch.sh
+```
+
+## CLI Reference
+
+```
+usage: spotify_tagger.py [-h] [--id CLIENT_ID] [--secret CLIENT_SECRET]
+                         [--no-cover] [--acoustid]
+                         [--acoustid-api-key ACOUSTID_API_KEY]
+                         audio [track]
+
+positional arguments:
+  audio                 Path to the audio file (.mp3, .m4a, .opus)
+  track                 Spotify track URL or ID (not needed with --acoustid)
+
+options:
+  --id CLIENT_ID        Spotify Client ID (or SPOTIPY_CLIENT_ID env var)
+  --secret CLIENT_SECRET  Spotify Client Secret (or SPOTIPY_CLIENT_SECRET env var)
+  --no-cover            Skip embedding cover art
+  --acoustid            Use AcoustID fingerprinting instead of Spotify API
+  --acoustid-api-key KEY  AcoustID API key (or ACOUSTID_API_KEY env var)
+```
+
+## Project Structure
+
+```
+├── spotify_tagger.py       # Core CLI — tagging logic
+├── spotify_tagger_app.py   # GTK3 GUI
+├── setup.sh                # One-shot setup (creates venv, installs deps)
+├── launch.sh               # GUI launcher
+├── stag                    # CLI launcher
+├── spotify-tagger.desktop  # Linux .desktop entry
+└── README.md
+```

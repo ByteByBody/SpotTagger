@@ -1,6 +1,14 @@
 # spotify-audio-tagger
 
-Tag local audio files with metadata from Spotify or via AcoustID audio fingerprinting.
+A modern Python application for tagging local audio files with accurate metadata using Spotify or AcoustID audio fingerprinting.
+
+Supports both a GTK desktop interface and a command-line workflow.
+
+## Why Spotify Audio Tagger?
+
+Managing local music libraries can be tedious.
+
+Spotify Audio Tagger automatically fills in missing metadata—including title, artist, album, and cover artwork—using either Spotify's Web API or AcoustID audio fingerprinting, making your local music library clean and organized.
 
 ## Features
 

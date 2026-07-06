@@ -72,6 +72,44 @@ def download_cover(url: str) -> bytes:
     return r.content
 
 
+# ─── Local Spotify player helpers ────────────────────────────────────────────
+
+def fetch_from_player() -> dict:
+    """
+    Read the currently playing track from the local Spotify desktop client
+    via MPRIS (playerctl). No API credentials needed.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["playerctl", "-p", "spotify", "metadata",
+             "--format", "{{title}}||{{artist}}||{{album}}||{{mpris:artUrl}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("playerctl not found — install it with 'sudo apt install playerctl'")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Spotify not responding")
+
+    if result.returncode != 0:
+        err = result.stderr.strip()
+        if "No players found" in err:
+            raise RuntimeError("Spotify is not running or not playing")
+        raise RuntimeError(err or "Could not read from Spotify player")
+
+    parts = result.stdout.strip().split("||", 3)
+    if len(parts) < 4:
+        raise RuntimeError("Unexpected playerctl output")
+
+    title, artist, album, cover_url = parts
+    return {
+        "title":     title or "Unknown Track",
+        "artist":    artist or "Unknown Artist",
+        "album":     album or "Unknown Album",
+        "cover_url": cover_url or None,
+    }
+
+
 # ─── AcoustID / MusicBrainz helpers ──────────────────────────────────────────
 
 def _fetch_musicbrainz_cover(recording_id: str) -> bytes | None:
@@ -351,6 +389,8 @@ Examples:
                    help="Use AcoustID audio fingerprinting instead of Spotify API")
     p.add_argument("--musicbrainz", action="store_true",
                    help="Search MusicBrainz by track/artist name (no API keys needed)")
+    p.add_argument("--from-player", action="store_true",
+                   help="Fetch now-playing track from local Spotify client (no API keys needed)")
     p.add_argument("--acoustid-api-key",
                    default=os.getenv("ACOUSTID_API_KEY", ACOUSTID_DEFAULT_KEY),
                     help="AcoustID API key (required; set ACOUSTID_API_KEY env var or pass this flag)")
@@ -417,10 +457,35 @@ def main():
         else:
             print(f"[warn] No cover art found on MusicBrainz.")
 
+    # ── Local player mode ──
+    elif args.from_player:
+        if args.track:
+            print(f"[warn] Ignoring track argument — reading from local player instead.")
+        print(f"[*] Reading now-playing from local Spotify …")
+        try:
+            info = fetch_from_player()
+        except Exception as e:
+            sys.exit(f"[error] {e}")
+        print(f"[*] Track  : {info['title']}")
+        print(f"[*] Artist : {info['artist']}")
+        print(f"[*] Album  : {info['album']}")
+        cover_bytes = None
+        if not args.no_cover and info["cover_url"]:
+            print(f"[*] Downloading cover art …")
+            try:
+                cover_bytes = download_cover(info["cover_url"])
+                print(f"[*] Cover  : {len(cover_bytes)//1024} KB")
+            except Exception as e:
+                print(f"[warn] Could not download cover: {e}")
+        elif args.no_cover:
+            print(f"[*] Cover  : skipped (--no-cover)")
+        else:
+            print(f"[warn] No cover URL from player.")
+
     # ── Spotify mode ──
     else:
         if not args.track:
-            sys.exit("[error] A Spotify track URL/ID is required (or use --acoustid or --musicbrainz).")
+            sys.exit("[error] A Spotify track URL/ID is required (or use --acoustid or --musicbrainz or --from-player).")
         if not args.client_id or not args.client_secret:
             sys.exit(
                 "[error] Spotify credentials missing.\n"

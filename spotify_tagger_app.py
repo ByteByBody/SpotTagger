@@ -85,6 +85,16 @@ window { background-color: #0e0e10; }
     font-size: 12px;
 }
 .url-entry:focus { border-color: #1db954; }
+.nowplaying-btn {
+    font-size: 12px;
+    background: #1ed760;
+    color: #000;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+}
+.nowplaying-btn:active { background: #1aa34a; }
 .folder-entry {
     background-color: #1a1a1f;
     color: #e8e8ec;
@@ -332,6 +342,13 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.fetch_btn = Gtk.Button(label="Fetch")
         self.fetch_btn.connect("clicked", self._on_fetch)
         url_row.pack_start(self.fetch_btn, False, False, 0)
+
+        # "Now Playing" button (available in any mode, reads from local Spotify client)
+        self.nowplaying_btn = Gtk.Button(label="Now Playing")
+        self.nowplaying_btn.connect("clicked", self._on_nowplaying)
+        apply_css(self.nowplaying_btn, "nowplaying-btn")
+        url_row.pack_start(self.nowplaying_btn, False, False, 0)
+
         self.url_box.pack_start(url_row, False, False, 0)
         main.pack_start(self.url_box, False, False, 0)
 
@@ -638,6 +655,56 @@ class TaggerWindow(Gtk.ApplicationWindow):
             self._set_status(f"Searching MusicBrainz for '{query}'…")
             threading.Thread(target=self._mb_search_worker, args=(query,), daemon=True).start()
 
+    def _on_nowplaying(self, btn):
+        self.nowplaying_btn.set_sensitive(False)
+        self._set_status("Reading now-playing track from local Spotify…")
+        threading.Thread(target=self._nowplaying_worker, daemon=True).start()
+
+    def _nowplaying_worker(self):
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["playerctl", "-p", "spotify", "metadata",
+                 "--format", "{{title}}||{{artist}}||{{album}}||{{mpris:artUrl}}"],
+                capture_output=True, text=True, timeout=5,
+            )
+        except FileNotFoundError:
+            GLib.idle_add(self._on_fetch_error,
+                          "playerctl not found – install it with 'sudo apt install playerctl'")
+            return
+        except Exception as e:
+            GLib.idle_add(self._on_fetch_error, f"Could not read from Spotify: {e}")
+            return
+
+        if result.returncode != 0:
+            err = result.stderr.strip()
+            msg = "Spotify is not running or not playing" if "No players found" in err else (err or "playerctl error")
+            GLib.idle_add(self._on_fetch_error, msg)
+            return
+
+        parts = result.stdout.strip().split("||", 3)
+        if len(parts) < 4:
+            GLib.idle_add(self._on_fetch_error, "Unexpected playerctl output")
+            return
+
+        title, artist, album, cover_url = parts
+        meta = {
+            "title":     title or "Unknown Track",
+            "artist":    artist or "Unknown Artist",
+            "album":     album or "Unknown Album",
+            "cover_url": cover_url or None,
+        }
+        cover_bytes = None
+        if meta["cover_url"]:
+            import requests as req
+            try:
+                r = req.get(meta["cover_url"], timeout=10)
+                if r.status_code == 200:
+                    cover_bytes = r.content
+            except Exception:
+                pass
+        GLib.idle_add(self._on_fetch_done, meta, cover_bytes)
+
     def _mb_search_worker(self, query):
         """Search MusicBrainz in a background thread."""
         try:
@@ -730,6 +797,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.meta         = meta
         self.cover_bytes  = cover_bytes
         self.fetch_btn.set_sensitive(True)
+        self.nowplaying_btn.set_sensitive(True)
         self._save_config()
         for widget, key in [(self.m_title, "title"), (self.m_artist, "artist"), (self.m_album, "album")]:
             widget.set_text(meta[key])
@@ -748,6 +816,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     def _on_fetch_error(self, msg):
         self.fetch_btn.set_sensitive(True)
+        self.nowplaying_btn.set_sensitive(True)
         self._set_status(f"Fetch error: {msg}", "err")
         return False
 

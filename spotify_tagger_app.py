@@ -212,6 +212,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
         self.mode_combo = Gtk.ComboBoxText()
         self.mode_combo.append("spotify", "Spotify API")
+        self.mode_combo.append("musicbrainz", "MusicBrainz Search")
         self.mode_combo.append("acoustid", "Auto (AcoustID)")
         self.mode_combo.set_active(0)
         self.mode_combo.connect("changed", self._on_mode_changed)
@@ -501,8 +502,10 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.drop_icon.set_markup('<span font="24" foreground="#1db954">✓</span>')
         self.fname_label.set_text(Path(path).name)
         self.fname_label.set_visible(True)
-        if self._is_acoustid():
+        if self._mode() == "acoustid":
             self._set_status(f"Loaded: {Path(path).name} — click Tag & Save to auto-detect via AcoustID")
+        elif self._mode() == "musicbrainz":
+            self._set_status(f"Loaded: {Path(path).name} — type a track name and search")
         else:
             self._set_status(f"Loaded: {Path(path).name} — paste a Spotify URL and fetch")
             self._reset_meta_display()
@@ -526,22 +529,28 @@ class TaggerWindow(Gtk.ApplicationWindow):
             self.folder_entry.set_text(dialog.get_filename())
         dialog.destroy()
 
-    def _is_acoustid(self):
-        return self.mode_combo.get_active_id() == "acoustid"
+    def _mode(self):
+        return self.mode_combo.get_active_id()
 
     def _on_mode_changed(self, combo):
-        is_acoustid = self._is_acoustid()
-        self.creds_box.set_visible(not is_acoustid)
-        self.acoustid_box.set_visible(is_acoustid)
-        self.url_box.set_visible(not is_acoustid)
+        mode = self._mode()
+        self.creds_box.set_visible(mode == "spotify")
+        self.acoustid_box.set_visible(mode == "acoustid")
+        self.url_box.set_visible(mode != "acoustid")
         self.meta = None
         self.cover_bytes = None
         self._reset_meta_display()
 
-        if is_acoustid:
-            self._set_status("AcoustID mode — drop an audio file and click Tag & Save")
-        else:
+        if mode == "spotify":
+            self.url_entry.set_placeholder_text("https://open.spotify.com/track/…")
+            self.fetch_btn.set_label("Fetch")
             self._set_status("Spotify mode — drop a file, paste a URL, and fetch")
+        elif mode == "musicbrainz":
+            self.url_entry.set_placeholder_text("Search: track name — artist (e.g. Never Gonna Give You Up — Rick Astley)")
+            self.fetch_btn.set_label("Search")
+            self._set_status("MusicBrainz mode — drop a file, type a track name, and search")
+        else:
+            self._set_status("AcoustID mode — drop an audio file and click Tag & Save")
 
         if self.audio_path:
             self._set_status(f"Loaded: {Path(self.audio_path).name}")
@@ -566,7 +575,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2))
 
-    # ── Auto-fetch on URL paste ─────────────────────────────────
+    # ── Auto-fetch on URL paste / auto-search ──────────────────
     def _on_url_changed(self, entry):
         if self._fetch_timeout_id is not None:
             GLib.source_remove(self._fetch_timeout_id)
@@ -574,11 +583,15 @@ class TaggerWindow(Gtk.ApplicationWindow):
         url = entry.get_text().strip()
         if not url:
             return
-        m = re.search(r"track/([A-Za-z0-9]{22})", url)
-        is_valid = bool(m) or bool(re.fullmatch(r"[A-Za-z0-9]{22}", url))
-        if is_valid:
-            track_id = m.group(1) if m else url
-            self._fetch_timeout_id = GLib.timeout_add(400, self._auto_fetch, track_id)
+        mode = self._mode()
+        if mode == "spotify":
+            m = re.search(r"track/([A-Za-z0-9]{22})", url)
+            is_valid = bool(m) or bool(re.fullmatch(r"[A-Za-z0-9]{22}", url))
+            if is_valid:
+                track_id = m.group(1) if m else url
+                self._fetch_timeout_id = GLib.timeout_add(400, self._auto_fetch, track_id)
+        elif mode == "musicbrainz" and len(url) > 5:
+            self._fetch_timeout_id = GLib.timeout_add(600, self._auto_search, url)
 
     def _auto_fetch(self, track_id):
         self._fetch_timeout_id = None
@@ -592,25 +605,90 @@ class TaggerWindow(Gtk.ApplicationWindow):
         threading.Thread(target=self._fetch_worker, args=(cid, csec, track_id), daemon=True).start()
         return False
 
-    # ── Fetch ─────────────────────────────────────────────────────
-    def _on_fetch(self, btn):
-        url  = self.url_entry.get_text().strip()
-        cid  = self.cid_entry.get_text().strip()
-        csec = self.csec_entry.get_text().strip()
-        if not url:
-            self._set_status("Paste a Spotify track URL or ID", "err"); return
-        if not cid or not csec:
-            self._set_status("Enter your Spotify Client ID and Secret", "err"); return
-        m = re.search(r"track/([A-Za-z0-9]{22})", url)
-        if not m and re.fullmatch(r"[A-Za-z0-9]{22}", url):
-            track_id = url
-        elif m:
-            track_id = m.group(1)
-        else:
-            self._set_status("Cannot parse track ID from that URL", "err"); return
+    def _auto_search(self, query):
+        self._fetch_timeout_id = None
         self.fetch_btn.set_sensitive(False)
-        self._set_status("Fetching metadata from Spotify…")
-        threading.Thread(target=self._fetch_worker, args=(cid, csec, track_id), daemon=True).start()
+        self._set_status(f"Searching MusicBrainz…")
+        threading.Thread(target=self._mb_search_worker, args=(query,), daemon=True).start()
+        return False
+
+    # ── Fetch / Search ─────────────────────────────────────────────
+    def _on_fetch(self, btn):
+        query = self.url_entry.get_text().strip()
+        if not query:
+            self._set_status("Enter a search query", "err"); return
+        mode = self._mode()
+        if mode == "spotify":
+            cid  = self.cid_entry.get_text().strip()
+            csec = self.csec_entry.get_text().strip()
+            if not cid or not csec:
+                self._set_status("Enter your Spotify Client ID and Secret", "err"); return
+            m = re.search(r"track/([A-Za-z0-9]{22})", query)
+            if not m and re.fullmatch(r"[A-Za-z0-9]{22}", query):
+                track_id = query
+            elif m:
+                track_id = m.group(1)
+            else:
+                self._set_status("Cannot parse track ID from that URL", "err"); return
+            self.fetch_btn.set_sensitive(False)
+            self._set_status("Fetching metadata from Spotify…")
+            threading.Thread(target=self._fetch_worker, args=(cid, csec, track_id), daemon=True).start()
+        elif mode == "musicbrainz":
+            self.fetch_btn.set_sensitive(False)
+            self._set_status(f"Searching MusicBrainz for '{query}'…")
+            threading.Thread(target=self._mb_search_worker, args=(query,), daemon=True).start()
+
+    def _mb_search_worker(self, query):
+        """Search MusicBrainz in a background thread."""
+        try:
+            import requests as req
+            # Build candidate queries — parse "A — B" as both orderings
+            candidates = [f'"{query}"']
+            for sep in [" — ", " – ", " - ", " / "]:
+                parts = query.split(sep, 1)
+                if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                    a, b = parts[0].strip(), parts[1].strip()
+                    candidates = [
+                        f'artist:"{a}" AND recording:"{b}"',
+                        f'artist:"{b}" AND recording:"{a}"',
+                        f'"{query}"',
+                    ]
+                    break
+            MBUA = "SpotTagger/1.0"
+            url = "https://musicbrainz.org/ws/2/recording/"
+            recordings = []
+            for q in candidates:
+                params = {"query": q, "fmt": "json", "limit": 5, "inc": "releases+artist-credits"}
+                r = req.get(url, params=params, headers={"User-Agent": MBUA}, timeout=10)
+                r.raise_for_status()
+                recordings = r.json().get("recordings", [])
+                if recordings:
+                    break
+            r.raise_for_status()
+            data = r.json()
+            recordings = data.get("recordings", [])
+            if not recordings:
+                GLib.idle_add(self._on_fetch_error, f"No MusicBrainz results for '{query}'")
+                return
+            rec = recordings[0]
+            title = rec.get("title", "")
+            credits = rec.get("artist-credit", [])
+            artist = "".join(ac.get("name", "") + ac.get("joinphrase", "") for ac in credits) if credits else "Unknown Artist"
+            releases = rec.get("releases", [])
+            album = releases[0].get("title", "") if releases else ""
+            cover_bytes = None
+            for release in releases:
+                try:
+                    cr = req.get(f"https://coverartarchive.org/release/{release['id']}/front", timeout=10)
+                    if cr.status_code == 200:
+                        cover_bytes = cr.content
+                        break
+                except Exception:
+                    continue
+            meta = {"title": title, "artist": artist, "album": album, "cover_url": None}
+            GLib.idle_add(self._on_fetch_done, meta, cover_bytes)
+        except Exception as e:
+            GLib.idle_add(self._on_fetch_error, str(e))
 
     def _fetch_worker(self, cid, csec, track_id):
         try:
@@ -682,9 +760,12 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     # ── Tag & Save ────────────────────────────────────────────────
     def _check_ready(self):
-        if self._is_acoustid():
+        mode = self._mode()
+        if mode == "acoustid":
             ak = self.acoustid_key_entry.get_text().strip() or os.getenv("ACOUSTID_API_KEY", "")
             self.tag_btn.set_sensitive(bool(self.audio_path and ak))
+        elif mode == "musicbrainz":
+            self.tag_btn.set_sensitive(bool(self.audio_path and self.meta))
         else:
             self.tag_btn.set_sensitive(bool(self.audio_path and self.meta))
 
@@ -694,13 +775,20 @@ class TaggerWindow(Gtk.ApplicationWindow):
         to_local = self.local_toggle.get_active()
         local_dir = Path(self.folder_entry.get_text().strip()) if to_local else None
 
-        if self._is_acoustid():
+        mode = self._mode()
+        if mode == "acoustid":
             ak = self.acoustid_key_entry.get_text().strip() or os.getenv("ACOUSTID_API_KEY", "")
             if not ak:
                 self._set_status("Enter your AcoustID API key in the sidebar (or set ACOUSTID_API_KEY env var)", "err")
                 return
             cmd = [PYTHON, str(TAGGER), self.audio_path, "--acoustid",
                    "--acoustid-api-key", ak]
+            env = os.environ.copy()
+        elif mode == "musicbrainz":
+            if not self.meta:
+                return
+            query = self.url_entry.get_text().strip()
+            cmd = [PYTHON, str(TAGGER), self.audio_path, query, "--musicbrainz"]
             env = os.environ.copy()
         else:
             if not self.meta:
@@ -726,7 +814,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     def _tag_worker(self, cmd, env, src_path, local_dir):
         try:
-            timeout = 120 if "--acoustid" in cmd else 30
+            timeout = 120 if "--acoustid" in cmd else 60 if "--musicbrainz" in cmd else 30
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
             if result.returncode != 0:
                 err = result.stderr.strip() or result.stdout.strip()

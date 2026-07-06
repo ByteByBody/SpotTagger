@@ -157,6 +157,90 @@ def fingerprint_and_lookup(audio_path: str, api_key: str = ACOUSTID_DEFAULT_KEY)
     return info
 
 
+# ─── MusicBrainz search helpers ──────────────────────────────────────────────
+
+def _fetch_cover_from_releases(releases: list) -> bytes | None:
+    """Try each release's cover art from Cover Art Archive."""
+    for release in releases:
+        try:
+            cr = requests.get(f"https://coverartarchive.org/release/{release['id']}/front",
+                              timeout=10)
+            if cr.status_code == 200:
+                return cr.content
+        except Exception:
+            continue
+    return None
+
+
+def search_musicbrainz(query: str) -> dict:
+    """
+    Search MusicBrainz by track/artist name.
+    No API key needed — just a User-Agent header.
+    """
+    # Build candidate queries — try to parse "A — B" as both (artist: A, recording: B)
+    # and (artist: B, recording: A), then fall back to a plain search.
+    candidates = [f'"{query}"']
+    for sep in [" — ", " – ", " - ", " / "]:
+        parts = query.split(sep, 1)
+        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+            a, b = parts[0].strip(), parts[1].strip()
+            candidates = [
+                f'artist:"{a}" AND recording:"{b}"',
+                f'artist:"{b}" AND recording:"{a}"',
+                f'"{query}"',
+            ]
+            break
+
+    url = "https://musicbrainz.org/ws/2/recording/"
+    recordings = []
+    for q in candidates:
+        params = {
+            "query": q,
+            "fmt": "json",
+            "limit": 5,
+            "inc": "releases+artist-credits",
+        }
+        r = requests.get(url, params=params,
+                     headers={"User-Agent": MB_USER_AGENT}, timeout=10)
+        r.raise_for_status()
+        recordings = r.json().get("recordings", [])
+        if recordings:
+            break
+
+    if not recordings:
+        raise ValueError(f"No matching tracks found on MusicBrainz for '{query}'")
+
+    rec = recordings[0]
+    recording_id = rec["id"]
+    title = rec.get("title", "")
+
+    # Artist credit
+    credits = rec.get("artist-credit", [])
+    artist = "".join(
+        ac.get("name", "") + ac.get("joinphrase", "")
+        for ac in credits
+    ) if credits else "Unknown Artist"
+
+    # Album from first release
+    releases = rec.get("releases", [])
+    album = releases[0].get("title", "") if releases else ""
+
+    mb_cover = _fetch_cover_from_releases(releases)
+
+    info = {
+        "title":     title,
+        "artist":    artist,
+        "album":     album,
+        "cover_url": None,
+    }
+    if mb_cover:
+        info["cover_url"] = "__embedded__"
+        info["cover_data"] = mb_cover
+
+    print(f"[*] MusicBrainz match: {artist} — {title}")
+    return info
+
+
 # ─── Taggers ──────────────────────────────────────────────────────────────────
 
 def tag_mp3(path: str, info: dict, cover: bytes | None):
@@ -247,11 +331,14 @@ Examples:
 
   # AcoustID with inline key:
   python3 spotify_tagger.py song.m4a --acoustid --acoustid-api-key YOUR_KEY
+
+  # MusicBrainz search (no API keys at all):
+  python3 spotify_tagger.py song.mp3 "Never Gonna Give You Up — Rick Astley" --musicbrainz
 """,
     )
     p.add_argument("audio",  help="Path to the audio file (.mp3, .m4a, .opus)")
     p.add_argument("track", nargs="?", default=None,
-                   help="Spotify track URL or bare track ID (not needed with --acoustid)")
+                   help="Spotify URL/ID, or MusicBrainz search query (not needed with --acoustid)")
     p.add_argument("--id",     dest="client_id",     default=os.getenv("SPOTIPY_CLIENT_ID"),
                    help="Spotify Client ID  (or set SPOTIPY_CLIENT_ID env var)")
     p.add_argument("--secret", dest="client_secret", default=os.getenv("SPOTIPY_CLIENT_SECRET"),
@@ -262,6 +349,8 @@ Examples:
     # AcoustID mode
     p.add_argument("--acoustid", action="store_true",
                    help="Use AcoustID audio fingerprinting instead of Spotify API")
+    p.add_argument("--musicbrainz", action="store_true",
+                   help="Search MusicBrainz by track/artist name (no API keys needed)")
     p.add_argument("--acoustid-api-key",
                    default=os.getenv("ACOUSTID_API_KEY", ACOUSTID_DEFAULT_KEY),
                     help="AcoustID API key (required; set ACOUSTID_API_KEY env var or pass this flag)")
@@ -280,8 +369,29 @@ def main():
     if ext not in TAGGERS:
         sys.exit(f"[error] Unsupported format '{ext}'. Supported: {', '.join(TAGGERS)}")
 
-    # ── AcoustID / MusicBrainz mode ──
-    if args.acoustid:
+    # ── MusicBrainz Search mode ──
+    if args.musicbrainz:
+        if not args.track:
+            sys.exit("[error] A search query is required (e.g., 'Artist Name — Track Name')")
+        print(f"[*] Searching MusicBrainz for '{args.track}' …")
+        try:
+            info = search_musicbrainz(args.track)
+        except Exception as e:
+            sys.exit(f"[error] MusicBrainz search failed: {e}")
+        print(f"[*] Track  : {info['title']}")
+        print(f"[*] Artist : {info['artist']}")
+        print(f"[*] Album  : {info['album']}")
+        cover_bytes = None
+        if not args.no_cover and info.get("cover_data"):
+            cover_bytes = info["cover_data"]
+            print(f"[*] Cover  : {len(cover_bytes)//1024} KB (from Cover Art Archive)")
+        elif args.no_cover:
+            print(f"[*] Cover  : skipped (--no-cover)")
+        else:
+            print(f"[warn] No cover art found on MusicBrainz.")
+
+    # ── AcoustID mode ──
+    elif args.acoustid:
         if not args.acoustid_api_key:
             sys.exit(
                 "[error] AcoustID API key is required for fingerprinting.\n"
@@ -310,7 +420,7 @@ def main():
     # ── Spotify mode ──
     else:
         if not args.track:
-            sys.exit("[error] A Spotify track URL/ID is required (or use --acoustid for auto-detection).")
+            sys.exit("[error] A Spotify track URL/ID is required (or use --acoustid or --musicbrainz).")
         if not args.client_id or not args.client_secret:
             sys.exit(
                 "[error] Spotify credentials missing.\n"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-spotify_tagger_app.py — GTK3 GUI
+spotify_tagger_app.py — SpotTagger GTK3 GUI
 Tag audio files with Spotify metadata and drop them into your
 Spotify local-files folder so they appear in the Spotify client.
 """
@@ -21,7 +21,7 @@ SUPPORTED   = {".mp3", ".m4a", ".opus"}
 
 # Default Spotify local files folder (user can change in UI)
 DEFAULT_LOCAL  = Path.home() / "Music" / "Spotify Local"
-CONFIG_DIR     = Path.home() / ".config" / "spotify-tagger"
+CONFIG_DIR     = Path.home() / ".config" / "SpotTagger"
 CONFIG_PATH    = CONFIG_DIR / "config.json"
 
 CSS = b"""
@@ -160,9 +160,9 @@ def remove_css(widget, *classes):
         ctx.remove_class(c)
 
 
-class SpotifyTaggerApp(Gtk.Application):
+class SpotTaggerApp(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id="com.abdo.spotifytagger",
+        super().__init__(application_id="com.abdo.spottagger",
                          flags=Gio.ApplicationFlags.FLAGS_NONE)
 
     def do_activate(self):
@@ -174,7 +174,7 @@ class SpotifyTaggerApp(Gtk.Application):
 
 class TaggerWindow(Gtk.ApplicationWindow):
     def __init__(self, **kwargs):
-        super().__init__(title="Spotify Tagger", **kwargs)
+        super().__init__(title="SpotTagger", **kwargs)
         self.set_default_size(860, 560)
         self.set_resizable(True)
         self.audio_path       = None
@@ -190,7 +190,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
     def _build_header(self):
         hb = Gtk.HeaderBar()
         hb.set_show_close_button(True)
-        hb.props.title = "Spotify Tagger"
+        hb.props.title = "SpotTagger"
         self.set_titlebar(hb)
 
     # ── UI ────────────────────────────────────────────────────────
@@ -791,5 +791,5 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
 
 if __name__ == "__main__":
-    app = SpotifyTaggerApp()
+    app = SpotTaggerApp()
     sys.exit(app.run(sys.argv))

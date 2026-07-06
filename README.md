@@ -1,14 +1,14 @@
-# spotify-audio-tagger
+# SpotTagger
 
 A modern Python application for tagging local audio files with accurate metadata using Spotify or AcoustID audio fingerprinting.
 
 Supports both a GTK desktop interface and a command-line workflow.
 
-## Why Spotify Audio Tagger?
+## Why SpotTagger?
 
 Managing local music libraries can be tedious.
 
-Spotify Audio Tagger automatically fills in missing metadata—including title, artist, album, and cover artwork—using either Spotify's Web API or AcoustID audio fingerprinting, making your local music library clean and organized.
+SpotTagger automatically fills in missing metadata—including title, artist, album, and cover artwork—using either Spotify's Web API or AcoustID audio fingerprinting, making your local music library clean and organized.
 
 ## Features
 
@@ -116,7 +116,7 @@ options:
 ├── setup.sh                # One-shot setup (creates venv, installs deps)
 ├── launch.sh               # GUI launcher
 ├── stag                    # CLI launcher
-├── spotify-tagger.desktop  # Linux .desktop entry
+├── spotify-tagger.desktop  # Linux .desktop entry (SpotTagger)
 ├── docs/
 │   └── images/
 │       └── main-window.png # GUI screenshot

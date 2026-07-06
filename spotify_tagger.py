@@ -26,7 +26,7 @@ import acoustid
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 ACOUSTID_DEFAULT_KEY = "8XVB9HvQ5e"
-MB_USER_AGENT = "SpotifyTagger/1.0 (https://github.com/example/spotify-tagger)"
+MB_USER_AGENT = "SpotTagger/1.0"
 
 
 # ─── Spotify helpers ──────────────────────────────────────────────────────────

@@ -26,6 +26,15 @@ Spotify Audio Tagger automatically fills in missing metadata—including title, 
 
 ![Main Window](docs/images/main-window.png)
 
+-  Tag MP3, M4A and Opus files
+-  Embed high-quality album artwork
+-  Retrieve metadata directly from Spotify
+-  Identify songs using AcoustID fingerprinting
+-  Native GTK desktop interface
+-  Full command-line interface
+-  Copy tracks to Spotify Local Files
+
+
 ## Quick Start
 
 ### 1. Setup

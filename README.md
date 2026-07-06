@@ -4,12 +4,19 @@ Tag local audio files with metadata from Spotify or via AcoustID audio fingerpri
 
 ## Features
 
-- **Spotify mode** — fetch metadata (title, artist, album, cover art) from Spotify using the Web API
-- **AcoustID mode** — auto-detect metadata via audio fingerprinting + MusicBrainz (no Spotify account needed)
-- Supports **MP3**, **M4A**, and **Opus** files
-- Embedded cover art
-- Copy to Spotify Local Files folder for use in the Spotify desktop client
-- GTK3 GUI with drag-and-drop, or CLI
+- 🎵 Tag MP3, M4A and Opus files
+- 🖼 Embed high-quality album artwork
+- 🎧 Retrieve metadata directly from Spotify
+- 🔍 Identify songs using AcoustID fingerprinting
+- 🖥 Native GTK desktop interface
+- 💻 Full command-line interface
+- 📂 Copy tracks to Spotify Local Files
+
+## Screenshots
+
+### GTK Interface
+
+![Main Window](docs/images/main-window.png)
 
 ## Quick Start
 
@@ -84,5 +91,8 @@ options:
 ├── launch.sh               # GUI launcher
 ├── stag                    # CLI launcher
 ├── spotify-tagger.desktop  # Linux .desktop entry
+├── docs/
+│   └── images/
+│       └── main-window.png # GUI screenshot
 └── README.md
 ```

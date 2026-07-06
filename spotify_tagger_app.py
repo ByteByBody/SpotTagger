@@ -296,6 +296,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         s = self.acoustid_key_entry.get_style_context()
         s.add_class("cred-input")
         self.acoustid_key_entry.set_text(os.getenv("ACOUSTID_API_KEY", ""))
+        self.acoustid_key_entry.connect("changed", lambda _e: self._check_ready())
         self.acoustid_box.pack_start(self.acoustid_key_entry, False, False, 0)
 
         acoustid_hint = Gtk.Label()
@@ -682,7 +683,8 @@ class TaggerWindow(Gtk.ApplicationWindow):
     # ── Tag & Save ────────────────────────────────────────────────
     def _check_ready(self):
         if self._is_acoustid():
-            self.tag_btn.set_sensitive(bool(self.audio_path))
+            ak = self.acoustid_key_entry.get_text().strip() or os.getenv("ACOUSTID_API_KEY", "")
+            self.tag_btn.set_sensitive(bool(self.audio_path and ak))
         else:
             self.tag_btn.set_sensitive(bool(self.audio_path and self.meta))
 
@@ -693,10 +695,12 @@ class TaggerWindow(Gtk.ApplicationWindow):
         local_dir = Path(self.folder_entry.get_text().strip()) if to_local else None
 
         if self._is_acoustid():
-            cmd = [PYTHON, str(TAGGER), self.audio_path, "--acoustid"]
-            ak = self.acoustid_key_entry.get_text().strip()
-            if ak:
-                cmd += ["--acoustid-api-key", ak]
+            ak = self.acoustid_key_entry.get_text().strip() or os.getenv("ACOUSTID_API_KEY", "")
+            if not ak:
+                self._set_status("Enter your AcoustID API key in the sidebar (or set ACOUSTID_API_KEY env var)", "err")
+                return
+            cmd = [PYTHON, str(TAGGER), self.audio_path, "--acoustid",
+                   "--acoustid-api-key", ak]
             env = os.environ.copy()
         else:
             if not self.meta:

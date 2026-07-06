@@ -25,7 +25,7 @@ import acoustid
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-ACOUSTID_DEFAULT_KEY = "8XVB9HvQ5e"
+ACOUSTID_DEFAULT_KEY = ""  # no fallback — user must provide their own
 MB_USER_AGENT = "SpotTagger/1.0"
 
 
@@ -264,7 +264,7 @@ Examples:
                    help="Use AcoustID audio fingerprinting instead of Spotify API")
     p.add_argument("--acoustid-api-key",
                    default=os.getenv("ACOUSTID_API_KEY", ACOUSTID_DEFAULT_KEY),
-                   help="AcoustID API key (default: built-in, get your own at acoustid.org)")
+                    help="AcoustID API key (required; set ACOUSTID_API_KEY env var or pass this flag)")
 
     return p.parse_args()
 
@@ -282,6 +282,12 @@ def main():
 
     # ── AcoustID / MusicBrainz mode ──
     if args.acoustid:
+        if not args.acoustid_api_key:
+            sys.exit(
+                "[error] AcoustID API key is required for fingerprinting.\n"
+                "  Set ACOUSTID_API_KEY env var, or use --acoustid-api-key.\n"
+                "  Get a free key at https://acoustid.org/"
+            )
         print(f"[*] Fingerprinting {args.audio} …")
         try:
             info = fingerprint_and_lookup(args.audio, args.acoustid_api_key)

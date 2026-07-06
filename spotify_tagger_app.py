@@ -20,7 +20,9 @@ PYTHON      = str(VENV_PY) if VENV_PY.exists() else sys.executable
 SUPPORTED   = {".mp3", ".m4a", ".opus"}
 
 # Default Spotify local files folder (user can change in UI)
-DEFAULT_LOCAL = Path.home() / "Music" / "Spotify Local"
+DEFAULT_LOCAL  = Path.home() / "Music" / "Spotify Local"
+CONFIG_DIR     = Path.home() / ".config" / "spotify-tagger"
+CONFIG_PATH    = CONFIG_DIR / "config.json"
 
 CSS = b"""
 window { background-color: #0e0e10; }
@@ -175,12 +177,14 @@ class TaggerWindow(Gtk.ApplicationWindow):
         super().__init__(title="Spotify Tagger", **kwargs)
         self.set_default_size(860, 560)
         self.set_resizable(True)
-        self.audio_path  = None
-        self.meta        = None
-        self.cover_bytes = None
+        self.audio_path       = None
+        self.meta             = None
+        self.cover_bytes      = None
+        self._fetch_timeout_id = None
         self._build_header()
         self._build_ui()
         self._apply_styles()
+        self._load_config()
 
     # ── Header ────────────────────────────────────────────────────
     def _build_header(self):
@@ -320,6 +324,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.url_entry = Gtk.Entry()
         self.url_entry.set_placeholder_text("https://open.spotify.com/track/…")
         apply_css(self.url_entry, "url-entry")
+        self.url_entry.connect("changed", self._on_url_changed)
         url_row.pack_start(self.url_entry, True, True, 0)
 
         self.fetch_btn = Gtk.Button(label="Fetch")
@@ -541,6 +546,51 @@ class TaggerWindow(Gtk.ApplicationWindow):
             self._set_status(f"Loaded: {Path(self.audio_path).name}")
         self._check_ready()
 
+    # ── Config persistence ───────────────────────────────────────
+    def _load_config(self):
+        try:
+            data = json.loads(CONFIG_PATH.read_text())
+            self.cid_entry.set_text(data.get("spotify_client_id", ""))
+            self.csec_entry.set_text(data.get("spotify_client_secret", ""))
+            self.acoustid_key_entry.set_text(data.get("acoustid_api_key", ""))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def _save_config(self):
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        data = {
+            "spotify_client_id":     self.cid_entry.get_text().strip(),
+            "spotify_client_secret": self.csec_entry.get_text().strip(),
+            "acoustid_api_key":      self.acoustid_key_entry.get_text().strip(),
+        }
+        CONFIG_PATH.write_text(json.dumps(data, indent=2))
+
+    # ── Auto-fetch on URL paste ─────────────────────────────────
+    def _on_url_changed(self, entry):
+        if self._fetch_timeout_id is not None:
+            GLib.source_remove(self._fetch_timeout_id)
+            self._fetch_timeout_id = None
+        url = entry.get_text().strip()
+        if not url:
+            return
+        m = re.search(r"track/([A-Za-z0-9]{22})", url)
+        is_valid = bool(m) or bool(re.fullmatch(r"[A-Za-z0-9]{22}", url))
+        if is_valid:
+            track_id = m.group(1) if m else url
+            self._fetch_timeout_id = GLib.timeout_add(400, self._auto_fetch, track_id)
+
+    def _auto_fetch(self, track_id):
+        self._fetch_timeout_id = None
+        cid  = self.cid_entry.get_text().strip()
+        csec = self.csec_entry.get_text().strip()
+        if not cid or not csec:
+            self._set_status("Enter your Spotify Client ID and Secret", "err")
+            return False
+        self.fetch_btn.set_sensitive(False)
+        self._set_status("Auto-fetching metadata from Spotify…")
+        threading.Thread(target=self._fetch_worker, args=(cid, csec, track_id), daemon=True).start()
+        return False
+
     # ── Fetch ─────────────────────────────────────────────────────
     def _on_fetch(self, btn):
         url  = self.url_entry.get_text().strip()
@@ -601,6 +651,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.meta         = meta
         self.cover_bytes  = cover_bytes
         self.fetch_btn.set_sensitive(True)
+        self._save_config()
         for widget, key in [(self.m_title, "title"), (self.m_artist, "artist"), (self.m_album, "album")]:
             widget.set_text(meta[key])
             remove_css(widget, "empty")
@@ -690,6 +741,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     def _on_tag_done(self, ok, err, dest):
         self.tag_btn.set_sensitive(True)
+        self._save_config()
         if ok:
             name = Path(self.audio_path).name
             if dest:

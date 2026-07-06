@@ -12,14 +12,23 @@ Spotify Audio Tagger automatically fills in missing metadata—including title, 
 
 ## Features
 
-- 🎵 Tag MP3, M4A and Opus files
-- 🖼 Embed high-quality album artwork
-- 🎧 Retrieve metadata directly from Spotify
-- 🔍 Identify songs using AcoustID fingerprinting
-- 🖥 Native GTK desktop interface
-- 💻 Full command-line interface
-- 📂 Copy tracks to Spotify Local Files
+-  Tag MP3, M4A and Opus files
+-  Embed high-quality album artwork
+-  Retrieve metadata directly from Spotify
+-  Identify songs using AcoustID fingerprinting
+-  Native GTK desktop interface
+-  Full command-line interface
+-  Copy tracks to Spotify Local Files
 
+## Built With
+
+- Python
+- GTK3 (PyGObject)
+- Spotipy
+- Mutagen
+- AcoustID
+- MusicBrainz
+  
 ## Screenshots
 
 ### GTK Interface

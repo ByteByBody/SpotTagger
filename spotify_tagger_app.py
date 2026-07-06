@@ -85,16 +85,6 @@ window { background-color: #0e0e10; }
     font-size: 12px;
 }
 .url-entry:focus { border-color: #1db954; }
-.nowplaying-btn {
-    font-size: 12px;
-    background: #1ed760;
-    color: #000;
-    font-weight: bold;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 14px;
-}
-.nowplaying-btn:active { background: #1aa34a; }
 .folder-entry {
     background-color: #1a1a1f;
     color: #e8e8ec;
@@ -223,6 +213,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.mode_combo = Gtk.ComboBoxText()
         self.mode_combo.append("spotify", "Spotify API")
         self.mode_combo.append("musicbrainz", "MusicBrainz Search")
+        self.mode_combo.append("localplayer", "Local Player")
         self.mode_combo.append("acoustid", "Auto (AcoustID)")
         self.mode_combo.set_active(0)
         self.mode_combo.connect("changed", self._on_mode_changed)
@@ -342,12 +333,6 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.fetch_btn = Gtk.Button(label="Fetch")
         self.fetch_btn.connect("clicked", self._on_fetch)
         url_row.pack_start(self.fetch_btn, False, False, 0)
-
-        # "Now Playing" button (available in any mode, reads from local Spotify client)
-        self.nowplaying_btn = Gtk.Button(label="Now Playing")
-        self.nowplaying_btn.connect("clicked", self._on_nowplaying)
-        apply_css(self.nowplaying_btn, "nowplaying-btn")
-        url_row.pack_start(self.nowplaying_btn, False, False, 0)
 
         self.url_box.pack_start(url_row, False, False, 0)
         main.pack_start(self.url_box, False, False, 0)
@@ -553,7 +538,7 @@ class TaggerWindow(Gtk.ApplicationWindow):
         mode = self._mode()
         self.creds_box.set_visible(mode == "spotify")
         self.acoustid_box.set_visible(mode == "acoustid")
-        self.url_box.set_visible(mode != "acoustid")
+        self.url_box.set_visible(mode not in ("acoustid", "localplayer"))
         self.meta = None
         self.cover_bytes = None
         self._reset_meta_display()
@@ -566,6 +551,9 @@ class TaggerWindow(Gtk.ApplicationWindow):
             self.url_entry.set_placeholder_text("Search: track name — artist (e.g. Never Gonna Give You Up — Rick Astley)")
             self.fetch_btn.set_label("Search")
             self._set_status("MusicBrainz mode — drop a file, type a track name, and search")
+        elif mode == "localplayer":
+            self._set_status("Local Player mode — reading now-playing track from Spotify…")
+            threading.Thread(target=self._nowplaying_worker, daemon=True).start()
         else:
             self._set_status("AcoustID mode — drop an audio file and click Tag & Save")
 
@@ -631,10 +619,15 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     # ── Fetch / Search ─────────────────────────────────────────────
     def _on_fetch(self, btn):
+        mode = self._mode()
+        if mode == "localplayer":
+            self.fetch_btn.set_sensitive(False)
+            self._set_status("Reading now-playing track from local Spotify…")
+            threading.Thread(target=self._nowplaying_worker, daemon=True).start()
+            return
         query = self.url_entry.get_text().strip()
         if not query:
             self._set_status("Enter a search query", "err"); return
-        mode = self._mode()
         if mode == "spotify":
             cid  = self.cid_entry.get_text().strip()
             csec = self.csec_entry.get_text().strip()
@@ -654,11 +647,6 @@ class TaggerWindow(Gtk.ApplicationWindow):
             self.fetch_btn.set_sensitive(False)
             self._set_status(f"Searching MusicBrainz for '{query}'…")
             threading.Thread(target=self._mb_search_worker, args=(query,), daemon=True).start()
-
-    def _on_nowplaying(self, btn):
-        self.nowplaying_btn.set_sensitive(False)
-        self._set_status("Reading now-playing track from local Spotify…")
-        threading.Thread(target=self._nowplaying_worker, daemon=True).start()
 
     def _nowplaying_worker(self):
         import subprocess
@@ -797,7 +785,6 @@ class TaggerWindow(Gtk.ApplicationWindow):
         self.meta         = meta
         self.cover_bytes  = cover_bytes
         self.fetch_btn.set_sensitive(True)
-        self.nowplaying_btn.set_sensitive(True)
         self._save_config()
         for widget, key in [(self.m_title, "title"), (self.m_artist, "artist"), (self.m_album, "album")]:
             widget.set_text(meta[key])
@@ -816,7 +803,6 @@ class TaggerWindow(Gtk.ApplicationWindow):
 
     def _on_fetch_error(self, msg):
         self.fetch_btn.set_sensitive(True)
-        self.nowplaying_btn.set_sensitive(True)
         self._set_status(f"Fetch error: {msg}", "err")
         return False
 
@@ -858,6 +844,11 @@ class TaggerWindow(Gtk.ApplicationWindow):
                 return
             query = self.url_entry.get_text().strip()
             cmd = [PYTHON, str(TAGGER), self.audio_path, query, "--musicbrainz"]
+            env = os.environ.copy()
+        elif mode == "localplayer":
+            if not self.meta:
+                return
+            cmd = [PYTHON, str(TAGGER), self.audio_path, "--from-player"]
             env = os.environ.copy()
         else:
             if not self.meta:

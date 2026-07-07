@@ -1,48 +1,30 @@
 # SpotTagger
 
-A modern Python application for tagging local audio files with accurate metadata using Spotify or AcoustID audio fingerprinting.
+Tag your audio files with metadata from Spotify, MusicBrainz, or your local Spotify player — no account required for most modes.
 
-Supports both a GTK desktop interface and a command-line workflow.
-
-## Why SpotTagger?
-
-Managing local music libraries can be tedious.
-
-SpotTagger automatically fills in missing metadata—including title, artist, album, and cover artwork—using either Spotify's Web API or AcoustID audio fingerprinting, making your local music library clean and organized.
+Supports MP3, M4A, Opus. Embeds title, artist, album, and cover artwork. Comes with both a GTK desktop GUI and a CLI.
 
 ## Features
 
--  Tag MP3, M4A and Opus files
--  Embed high-quality album artwork
--  Retrieve metadata directly from Spotify
--  Identify songs using AcoustID fingerprinting
--  Native GTK desktop interface
--  Full command-line interface
--  Copy tracks to Spotify Local Files
+- **Three metadata sources** — Spotify API, MusicBrainz Search, or Local Player (reads your running Spotify client)
+- **AcoustID fingerprinting** — identify songs by audio fingerprint (requires a free AcoustID API key)
+- **Embed cover art** — high-quality album artwork into the file
+- **Spotify Local Files** — copy tagged files to your Spotify local files folder automatically
+- **Drop-dead simple GUI** — drag & drop files, paste a URL, click Tag & Save
+- **Full CLI** — scriptable, headless tagging
 
-## Built With
+## Modes
 
-- Python
-- GTK3 (PyGObject)
-- Spotipy
-- Mutagen
-- AcoustID
-- MusicBrainz
-  
+| Mode | Credentials Needed | What it does |
+|---|---|---|
+| **Spotify API** | Client ID + Secret (from developer.spotify.com) | Paste a Spotify track URL, fetches metadata via the official API |
+| **MusicBrainz Search** | **None** | Type a track name (`Track — Artist`) and it searches the open MusicBrainz database |
+| **Local Player** | **None** | Reads whatever is currently playing in your local Spotify desktop app via MPRIS |
+| **Auto (AcoustID)** | Free AcoustID key (acoustid.org) | Fingerprints the audio file and looks up the match on MusicBrainz |
+
 ## Screenshots
 
-### GTK Interface
-
 ![Main Window](docs/images/main-window.png)
-
--  Tag MP3, M4A and Opus files
--  Embed high-quality album artwork
--  Retrieve metadata directly from Spotify
--  Identify songs using AcoustID fingerprinting
--  Native GTK desktop interface
--  Full command-line interface
--  Copy tracks to Spotify Local Files
-
 
 ## Quick Start
 
@@ -54,13 +36,9 @@ SpotTagger automatically fills in missing metadata—including title, artist, al
 
 This creates a virtualenv and installs dependencies.
 
-### 2. Get API Keys
+### 2. System Dependencies
 
-- **Spotify mode:** Create an app at https://developer.spotify.com, grab the Client ID and Secret
-- **AcoustID mode:** Get a free API key at https://acoustid.org/
-
-**System dependency:** AcoustID fingerprinting needs `libchromaprint`:
-
+**AcoustID fingerprinting** needs `libchromaprint`:
 ```bash
 # Debian / Ubuntu / Mint
 sudo apt install libchromaprint-dev
@@ -69,15 +47,36 @@ sudo apt install libchromaprint-dev
 sudo pacman -S chromaprint
 ```
 
-### 3. Use It
+**Local Player mode** needs `playerctl`:
+```bash
+# Debian / Ubuntu / Mint
+sudo apt install playerctl
+
+# Arch
+sudo pacman -S playerctl
+```
+
+### 3. Get API Keys (optional)
+
+Only needed if you use Spotify API or AcoustID modes:
+- **Spotify:** Create an app at https://developer.spotify.com, grab Client ID + Secret
+- **AcoustID:** Get a free key at https://acoustid.org/
+
+### 4. Use It
 
 #### CLI
 
 ```bash
-# Spotify mode
+# Spotify API mode
 ./stag song.mp3 https://open.spotify.com/track/... --id CLIENT_ID --secret CLIENT_SECRET
 
-# AcoustID mode (no Spotify credentials)
+# MusicBrainz Search mode (no keys)
+./stag song.mp3 "Never Gonna Give You Up — Rick Astley" --musicbrainz
+
+# Local Player mode (no keys — reads from running Spotify desktop)
+./stag song.mp3 --from-player
+
+# AcoustID fingerprinting mode (free key required)
 export ACOUSTID_API_KEY=your_key
 ./stag song.mp3 --acoustid
 ```
@@ -94,18 +93,21 @@ export ACOUSTID_API_KEY=your_key
 usage: spotify_tagger.py [-h] [--id CLIENT_ID] [--secret CLIENT_SECRET]
                          [--no-cover] [--acoustid]
                          [--acoustid-api-key ACOUSTID_API_KEY]
+                         [--musicbrainz] [--from-player]
                          audio [track]
 
 positional arguments:
   audio                 Path to the audio file (.mp3, .m4a, .opus)
-  track                 Spotify track URL or ID (not needed with --acoustid)
+  track                 Spotify URL/ID, or search query for --musicbrainz
 
 options:
-  --id CLIENT_ID        Spotify Client ID (or SPOTIPY_CLIENT_ID env var)
+  --id CLIENT_ID          Spotify Client ID (or SPOTIPY_CLIENT_ID env var)
   --secret CLIENT_SECRET  Spotify Client Secret (or SPOTIPY_CLIENT_SECRET env var)
-  --no-cover            Skip embedding cover art
-  --acoustid            Use AcoustID fingerprinting instead of Spotify API
+  --no-cover              Skip embedding cover art
+  --acoustid              Use AcoustID fingerprinting
   --acoustid-api-key KEY  AcoustID API key (or ACOUSTID_API_KEY env var)
+  --musicbrainz           Search MusicBrainz by track name (no API keys)
+  --from-player           Read now-playing from local Spotify (no API keys)
 ```
 
 ## Project Structure
@@ -116,9 +118,15 @@ options:
 ├── setup.sh                # One-shot setup (creates venv, installs deps)
 ├── launch.sh               # GUI launcher
 ├── stag                    # CLI launcher
-├── spotify-tagger.desktop  # Linux .desktop entry (SpotTagger)
+├── AGENTS.md               # Notes for AI coding assistants
+├── spotify-tagger.desktop  # Linux .desktop entry
 ├── docs/
 │   └── images/
-│       └── main-window.png # GUI screenshot
+│       └── main-window.png
 └── README.md
 ```
+
+## Release History
+
+- **v1.0.0** — MusicBrainz Search, Local Player mode, AcoustID key fix, credential persistence, auto-fetch on URL paste, proper README
+- **v0.1.0** — Original release: Spotify API + AcoustID fingerprinting, GTK GUI, CLI

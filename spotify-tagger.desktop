@@ -2,8 +2,8 @@
 Version=1.0
 Type=Application
 Name=SpotTagger
-Comment=Tag audio files with Spotify metadata
-Exec=python3 /home/serotonin/spotify-tagger/spotify_tagger_app.py
+Comment=Tag audio files with Spotify/MusicBrainz metadata
+Exec=LAUNCH_SCRIPT_PATH
 Icon=audio-x-generic
 Terminal=false
 Categories=AudioVideo;Music;Utility;
